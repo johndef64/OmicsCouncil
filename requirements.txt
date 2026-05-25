@@ -1,0 +1,7 @@
+# OmicsCouncil — lightweight, CPU-only dependencies.
+# Everything below installs in seconds and pulls no large model weights or datasets:
+# the demonstration dataset ships inside scikit-learn.
+numpy>=1.24
+scikit-learn>=1.3
+networkx>=3.0
+PyYAML>=6.0

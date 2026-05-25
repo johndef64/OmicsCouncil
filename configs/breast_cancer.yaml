@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------------
+# Domain configuration for the OmicsCouncil framework.
+#
+# Everything that ties the framework to a *specific* biomedical domain lives in
+# a file like this one. To move OmicsCouncil to a new domain you write a new
+# config (and, if needed, a new dataset loader in src/omicscouncil/data.py) —
+# no change to the deliberation logic is required.
+# ---------------------------------------------------------------------------
+
+domain: breast_cancer
+seed: 42
+test_size: 0.30
+
+# --- Data source -----------------------------------------------------------
+# `loader` selects a registered loader in src/omicscouncil/data.py.
+# The Breast Cancer Wisconsin (Diagnostic) dataset ships inside scikit-learn,
+# so no download is needed. Its 30 features are three statistical views
+# (mean / standard-error / worst) of the same FNA cytology measurements; we
+# expose each view as one heterogeneous "modality" with its own expert agent.
+dataset:
+  loader: sklearn_breast_cancer
+
+modalities:
+  cytology_mean:
+    feature_filter: "mean"        # keep features whose name contains this token
+  cytology_se:
+    feature_filter: "error"
+  cytology_worst:
+    feature_filter: "worst"
+
+# --- Controlled claim vocabulary ------------------------------------------
+# Typed relations an agent may assert about a feature with respect to a class.
+relations:
+  - elevated_in     # feature value is high and that supports the class
+  - reduced_in      # feature value is low and that supports the class
+
+# --- Agent configuration ---------------------------------------------------
+agent:
+  type: statistical               # 'statistical' (default, CPU) or 'llm' (optional stub)
+  top_features_per_agent: 5       # how many discriminative features each agent reasons over
+  confidence_threshold: 0.55      # minimum self-confidence to emit a claim
+  confidence_beta: 1.5            # logistic steepness for confidence calibration
+
+# --- Deliberation protocol (toggles double as ablation switches) -----------
+council:
+  enable_cross_examination: true  # Round 2
+  enable_arbiter: true            # Round 3
+  typed_claims: true              # false -> free-form (untyped) claims ablation
+  drop_grades: [E3, E4]           # arbiter grades removed from the verified trace
+  support_threshold: 1            # peer supports needed to confirm a contested claim
+
+# --- Knowledge prior / arbiter --------------------------------------------
+# `source: derive_from_data` builds a lightweight feature<->class association
+# graph from the training split (a stand-in for a curated biomedical KG such as
+# Reactome/STRING/PrimeKG). To use a real KG instead, set:
+#   source: file
+#   path: configs/my_kg_edges.json
+knowledge:
+  source: derive_from_data
+
+# --- Downstream classifier on the deliberation-trace representation --------
+classifier:
+  type: logistic_regression
+  max_iter: 1000
+
+# --- Reference markers for the interpretability metric ---------------------
+# Domain knowledge: features clinically associated with malignancy in this
+# dataset. Used only to compute marker-recovery (does NOT affect training).
+reference_markers:
+  - "worst radius"
+  - "worst perimeter"
+  - "worst area"
+  - "worst concave points"
+  - "mean concave points"

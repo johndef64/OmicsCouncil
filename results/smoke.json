@@ -1,0 +1,23 @@
+{
+  "config": "configs/breast_cancer.yaml",
+  "omicscouncil": {
+    "accuracy": 0.9298245614035088,
+    "macro_f1": 0.9250876168224299,
+    "balanced_accuracy": 0.9250876168224299,
+    "ece": 0.022727387610229563,
+    "faithfulness": 0.04043117372993289,
+    "halluc_pruned_per_sample": 0.2807017543859649,
+    "halluc_verified_per_sample": 13.590643274853802,
+    "halluc_containment_rate": 0.02023608768971332,
+    "marker_recovery_ge1": 1.0,
+    "marker_recovery_ge3": 0.9649122807017544,
+    "marker_mean_markers": 4.649122807017544
+  },
+  "baseline": {
+    "accuracy": 0.9883040935672515,
+    "macro_f1": 0.9875146028037383,
+    "balanced_accuracy": 0.9875146028037383,
+    "ece": 0.032402707767127205
+  },
+  "representation_dim": 19
+}
