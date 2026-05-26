@@ -5,4 +5,15 @@ venv/
 .DS_Store
 
 
+data/omics/*
+data/kg/*
+data/docs/*
+
+
 docs/*
+archive/*
+
+results/*
+TODO*
+
+*api_key*

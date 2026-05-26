@@ -1,0 +1,97 @@
+# ---------------------------------------------------------------------------
+# Medium-weight TCGA-BRCA instantiation of OmicsCouncil.
+#
+# Four omic modalities (RNA / methylation / miRNA / CNV) -> PAM50 4-class.
+# Knowledge prior is a 1-hop PheKnowLator subset (Option C arbiter semantics:
+# the arbiter grades the *subject* (HGNC symbol) by biological anchoring,
+# not the (relation, object) part of the claim).
+# ---------------------------------------------------------------------------
+
+domain: tcga_brca
+seed: 42
+test_size: 0.30
+
+# --- Data source -----------------------------------------------------------
+# Loader registered in src/omicscouncil/loaders_tcga.py. It reads the four
+# TCGA matrices under data/omics/TCGA-BRCA/, joins them with the PAM50 label
+# file (data/omics/TCGA-BRCA/pam50_labels.tsv), inner-joins to the 4-way
+# sample intersection, drops the under-populated Normal class by default,
+# and keeps the top-K MAD features per modality.
+dataset:
+  loader: tcga_brca
+  top_features_per_modality: 3000   # MAD-3000 recovers 11/14 canonical PAM50
+                                    # markers (K=1000 only 3); see report.
+  feature_selection: mad            # 'mad' (unsupervised, default) keeps the
+                                    # framework agnostic to labels at feature
+                                    # selection time. 'anova_f' is available
+                                    # as an ablation (label-aware selector).
+  drop_classes: [Normal]            # under-populated after intersection
+
+# --- Modalities ------------------------------------------------------------
+# Names must match those produced by the dataset loader. No feature_filter
+# here — each modality has its own canonical feature space (HGNC symbols).
+modalities:
+  rna: {}
+  met: {}
+  mir: {}
+  cnv: {}
+
+# --- Controlled claim vocabulary ------------------------------------------
+# Same typed-claim tokens as the lightweight instantiation. These are
+# framework-imposed markers ("the agent reads the standardized feature as
+# elevated / reduced"), not KG predicates. PKT does not encode them.
+relations:
+  - elevated_in
+  - reduced_in
+
+# --- Agent configuration ---------------------------------------------------
+agent:
+  type: statistical                 # 'statistical' (default) or 'llm' (TBD)
+  top_features_per_agent: 40        # PoC used 5; here we have 1000 selected
+                                    # features per modality. 40 is a sweet
+                                    # spot between marker recovery and Z-sym
+                                    # noise (see redirection_report_optC).
+  confidence_threshold: 0.55
+  confidence_beta: 1.5
+
+# --- Deliberation protocol -------------------------------------------------
+council:
+  enable_cross_examination: true
+  enable_arbiter: true
+  typed_claims: true
+  drop_grades: [E3, E4]
+  support_threshold: 1
+
+# --- Knowledge prior (Option C: PKT-anchored arbiter) ----------------------
+# Built by `python src/data/build_pkt_brca_subset.py --top-k 1000 --n-hops 1`.
+# The arbiter grades each claim's subject (HGNC gene symbol) by anchoring
+# flags pre-computed from the subset:
+#   - E1: grounded in PKT AND has pathway or GO neighbour
+#   - E2: grounded in PKT but no pathway / GO
+#   - E3: not grounded in PKT
+#   - E4: reserved
+knowledge:
+  source: pkt_subset
+  path: data/kg/PKT/brca_subset.json
+
+# --- Downstream classifier on Z-sym ----------------------------------------
+classifier:
+  type: logistic_regression
+  max_iter: 2000                    # bumped for 4-class / wider feature set
+
+# --- Reference markers for the interpretability metric ---------------------
+# Canonical PAM50 / BRCA hormone-receptor markers. Note: top-1000 MAD does
+# not preserve all of them as features (e.g. BRCA1, ERBB2, MKI67 fall out).
+# This metric is therefore a conservative lower bound on marker recovery.
+reference_markers:
+  - ESR1
+  - ERBB2
+  - MKI67
+  - BCL2
+  - FOXA1
+  - MLPH
+  - KRT5
+  - KRT17
+  - GATA3
+  - PGR
+  - EGFR

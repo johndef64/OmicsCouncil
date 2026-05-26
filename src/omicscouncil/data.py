@@ -51,15 +51,30 @@ class MultiModalDataset:
 
 
 # --------------------------------------------------------------------------- #
-# Loader registry: a loader returns (X, feature_names, y, class_names).
+# Two loader registries:
+#   * _LOADERS         — legacy "flat X + feature_filter" loaders (Wisconsin).
+#   * _DATASET_LOADERS — modern loaders that build the per-modality matrices
+#                        themselves (used for true multi-omic settings where
+#                        each modality has a distinct feature space and sample
+#                        intersection has to be computed up front).
 # --------------------------------------------------------------------------- #
 LoaderFn = Callable[[], Tuple[np.ndarray, List[str], np.ndarray, List[str]]]
 _LOADERS: Dict[str, LoaderFn] = {}
+
+DatasetLoaderFn = Callable[["Config"], "MultiModalDataset"]
+_DATASET_LOADERS: Dict[str, DatasetLoaderFn] = {}
 
 
 def register_loader(name: str) -> Callable[[LoaderFn], LoaderFn]:
     def deco(fn: LoaderFn) -> LoaderFn:
         _LOADERS[name] = fn
+        return fn
+    return deco
+
+
+def register_dataset_loader(name: str) -> Callable[[DatasetLoaderFn], DatasetLoaderFn]:
+    def deco(fn: DatasetLoaderFn) -> DatasetLoaderFn:
+        _DATASET_LOADERS[name] = fn
         return fn
     return deco
 
@@ -81,11 +96,37 @@ def _load_breast_cancer() -> Tuple[np.ndarray, List[str], np.ndarray, List[str]]
 
 
 def build_multimodal_dataset(cfg: Config) -> MultiModalDataset:
-    """Load the raw matrix and split it into modalities per the config."""
+    """Build a :class:`MultiModalDataset` from the config.
+
+    Two paths are supported:
+
+    1. **Dataset loader** (preferred for true multi-omic): the loader returns
+       a fully assembled :class:`MultiModalDataset` (per-modality matrices,
+       sample intersection, label vector) and the config's ``modalities``
+       block is used only to validate the modality names.
+    2. **Flat loader** (legacy lightweight path): the loader returns a single
+       feature matrix; modalities are then carved out by ``feature_filter``.
+    """
     loader_name = cfg.dataset["loader"]
+
+    # Import dataset-loader modules for their side-effect registrations.
+    from . import loaders_tcga  # noqa: F401
+
+    if loader_name in _DATASET_LOADERS:
+        ds = _DATASET_LOADERS[loader_name](cfg)
+        declared = set(cfg.modalities)
+        produced = set(ds.modality_names)
+        if declared and declared != produced:
+            raise ValueError(
+                f"Loader '{loader_name}' produced modalities {sorted(produced)} "
+                f"but config declares {sorted(declared)}."
+            )
+        return ds
+
     if loader_name not in _LOADERS:
         raise KeyError(
-            f"Unknown loader '{loader_name}'. Registered: {sorted(_LOADERS)}"
+            f"Unknown loader '{loader_name}'. Registered flat: {sorted(_LOADERS)}; "
+            f"registered dataset: {sorted(_DATASET_LOADERS)}"
         )
     X, feature_names, y, class_names = _LOADERS[loader_name]()
 
