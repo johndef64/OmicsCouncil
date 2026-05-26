@@ -19,6 +19,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, os.path.join(_ROOT, "src"))
 
+# Ensure GROQ_API_KEY is set from src/api_keys.json if the LLMAgent is used.
+_keys_path = os.path.join(_ROOT, "src", "api_keys.json")
+if os.path.exists(_keys_path) and not os.environ.get("GROQ_API_KEY"):
+    import json as _json
+    _keys = _json.load(open(_keys_path))
+    if _keys.get("groq"):
+        os.environ["GROQ_API_KEY"] = _keys["groq"]
+
 from omicscouncil.config import Config, load_config            # noqa: E402
 from omicscouncil.data import (                                # noqa: E402
     MultiModalDataset, build_multimodal_dataset, train_test_split_dataset,

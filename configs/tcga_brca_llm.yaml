@@ -1,0 +1,48 @@
+agent:
+  confidence_beta: 1.5
+  confidence_threshold: 0.55
+  top_features_per_agent: 25
+  type: llm
+classifier:
+  max_iter: 2000
+  type: logistic_regression
+council:
+  drop_grades:
+  - E3
+  - E4
+  enable_arbiter: true
+  enable_cross_examination: true
+  support_threshold: 1
+  typed_claims: true
+dataset:
+  drop_classes:
+  - Normal
+  feature_selection: mad
+  loader: tcga_brca
+  top_features_per_modality: 3000
+domain: tcga_brca
+knowledge:
+  path: data/kg/PKT/brca_subset.json
+  source: pkt_subset
+modalities:
+  cnv: {}
+  met: {}
+  mir: {}
+  rna: {}
+reference_markers:
+- ESR1
+- ERBB2
+- MKI67
+- BCL2
+- FOXA1
+- MLPH
+- KRT5
+- KRT17
+- GATA3
+- PGR
+- EGFR
+relations:
+- elevated_in
+- reduced_in
+seed: 42
+test_size: 0.3
