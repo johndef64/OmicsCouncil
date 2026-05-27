@@ -130,11 +130,12 @@ def panel_accuracy(ax, summary):
 
     ax.set_xticks(x)
     ax.set_xticklabels(MODELS_ORDER, rotation=20, ha="right")
-    ax.set_ylim(0.6, 0.95)
+    ax.set_ylim(0.6, 0.99)
     ax.set_ylabel("Score (5-fold CV)")
     ax.set_title("(A) Classification: accuracy / macro-F1")
     ax.grid(axis="y", linestyle=":", linewidth=0.5, alpha=0.6)
-    ax.legend(loc="lower left", frameon=False, ncol=2,
+    ax.legend(loc="upper right", frameon=True, framealpha=0.9,
+              ncol=2, fontsize=7,
               handles=[plt.Rectangle((0,0),1,1, color="0.5", label="Accuracy"),
                        plt.Rectangle((0,0),1,1, color="0.5", hatch="///",
                                      alpha=0.55, label="Macro-F1")])
