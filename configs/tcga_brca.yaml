@@ -47,9 +47,12 @@ relations:
 # --- Agent configuration ---------------------------------------------------
 agent:
   type: statistical                 # 'statistical' (default) or 'llm' (TBD)
-  top_features_per_agent: 80        # PoC used 5; medium-weight tuned on
-                                    # 5-fold CV. See redirection_report_optC
-                                    # for the K=40 vs K=80 ablation.
+  top_features_per_agent: 40        # PoC used 5; medium-weight chosen via
+                                    # 5-fold CV ablation over K in {40,60,80}.
+                                    # K=40 wins on faithfulness (0.083) and
+                                    # variance, ties on ECE; -1.3pt F1 vs K=60
+                                    # is the deliberate trade-off. See
+                                    # redirection_report_optC for full table.
   confidence_threshold: 0.55
   confidence_beta: 1.5
 
