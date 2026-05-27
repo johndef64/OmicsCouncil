@@ -47,10 +47,9 @@ relations:
 # --- Agent configuration ---------------------------------------------------
 agent:
   type: statistical                 # 'statistical' (default) or 'llm' (TBD)
-  top_features_per_agent: 40        # PoC used 5; here we have 1000 selected
-                                    # features per modality. 40 is a sweet
-                                    # spot between marker recovery and Z-sym
-                                    # noise (see redirection_report_optC).
+  top_features_per_agent: 80        # PoC used 5; medium-weight tuned on
+                                    # 5-fold CV. See redirection_report_optC
+                                    # for the K=40 vs K=80 ablation.
   confidence_threshold: 0.55
   confidence_beta: 1.5
 

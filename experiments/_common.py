@@ -100,3 +100,73 @@ class ConcatBaseline:
 
     def predict_proba(self, ds: MultiModalDataset, active: Optional[List[str]] = None) -> np.ndarray:
         return self.clf.predict_proba(self._concat(ds, active=active, impute=True))
+
+
+class ConcatMLPBaseline(ConcatBaseline):
+    """Early-integration baseline with a small MLP head.
+
+    Concatenate-all then a 1-hidden-layer MLP (128 units, dropout 0.3).
+    Same mean-imputation policy as :class:`ConcatBaseline` for missing
+    modalities — purpose: show that even a non-linear concat head does not
+    on its own resolve the symbolic-representation question.
+    """
+
+    def __init__(self, max_iter: int = 200, hidden: int = 128, dropout: float = 0.3,
+                 random_state: int = 42):
+        super().__init__(max_iter=max_iter)
+        self.hidden = hidden
+        self.dropout = dropout
+        self.random_state = random_state
+
+    def fit(self, train: MultiModalDataset) -> "ConcatMLPBaseline":
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        self._means = {m: train.modalities[m].X.mean(axis=0) for m in train.modality_names}
+        self.clf = make_pipeline(
+            StandardScaler(),
+            MLPClassifier(hidden_layer_sizes=(self.hidden,),
+                          max_iter=self.max_iter,
+                          alpha=self.dropout,           # L2 (sklearn has no dropout)
+                          random_state=self.random_state),
+        )
+        self.clf.fit(self._concat(train), train.y)
+        return self
+
+
+class LateFusionBaseline:
+    """Late-integration baseline: one LogReg per modality, then average the
+    class probabilities. Shows the effect of *not* fusing modalities."""
+
+    def __init__(self, max_iter: int = 1000):
+        self.max_iter = max_iter
+
+    def fit(self, train: MultiModalDataset) -> "LateFusionBaseline":
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        self.class_names = train.class_names
+        self._per_modality = {}
+        for m in train.modality_names:
+            clf = make_pipeline(StandardScaler(),
+                                LogisticRegression(max_iter=self.max_iter))
+            clf.fit(train.modalities[m].X, train.y)
+            self._per_modality[m] = clf
+        return self
+
+    def predict_proba(self, ds: MultiModalDataset,
+                      active: Optional[List[str]] = None) -> np.ndarray:
+        active_set = set(active) if active is not None else set(ds.modality_names)
+        probas: List[np.ndarray] = []
+        for m, clf in self._per_modality.items():
+            if m not in active_set:
+                continue
+            probas.append(clf.predict_proba(ds.modalities[m].X))
+        if not probas:
+            n = ds.n_samples
+            return np.full((n, len(self.class_names)), 1.0 / len(self.class_names))
+        return np.mean(np.stack(probas, axis=0), axis=0)
+
+    def predict(self, ds: MultiModalDataset,
+                active: Optional[List[str]] = None) -> np.ndarray:
+        return self.predict_proba(ds, active=active).argmax(axis=1)

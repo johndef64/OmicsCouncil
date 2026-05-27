@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import argparse
 
-from _common import (DEFAULT_CONFIG, ConcatBaseline, load_split, print_table,
-                     save_json)
+from _common import (DEFAULT_CONFIG, ConcatBaseline, ConcatMLPBaseline,
+                     LateFusionBaseline, load_split, print_table, save_json)
 
 from omicscouncil.metrics import (classification_metrics,
                                    expected_calibration_error, faithfulness,
@@ -38,16 +38,24 @@ def main() -> None:
     oc.update({f"halluc_{k}": v for k, v in hallucination_containment(traces).items()})
     oc.update({f"marker_{k}": v for k, v in marker_recovery(traces, cfg.reference_markers).items()})
 
-    # --- Early-integration baseline ---------------------------------------
-    base = ConcatBaseline(max_iter=cfg.classifier.max_iter).fit(train)
-    bproba = base.predict_proba(test)
-    bm = classification_metrics(test.y, bproba.argmax(axis=1))
-    bm["ece"] = expected_calibration_error(test.y, bproba)
+    # --- Baselines --------------------------------------------------------
+    baselines = {
+        "Concat+LogReg":  ConcatBaseline(max_iter=cfg.classifier.max_iter).fit(train),
+        "Concat+MLP":     ConcatMLPBaseline(max_iter=400).fit(train),
+        "Late-fusion":    LateFusionBaseline(max_iter=cfg.classifier.max_iter).fit(train),
+    }
+    baseline_rows = []
+    baseline_metrics = {}
+    for name, m in baselines.items():
+        proba_b = m.predict_proba(test)
+        bm = classification_metrics(test.y, proba_b.argmax(axis=1))
+        bm["ece"] = expected_calibration_error(test.y, proba_b)
+        baseline_rows.append({"model": name, **bm})
+        baseline_metrics[name] = bm
 
     print_table(
         "Classification (test set)",
-        [{"model": "Concat+LogReg (baseline)", **bm},
-         {"model": "OmicsCouncil (Z-sym)", **oc}],
+        baseline_rows + [{"model": "OmicsCouncil (Z-sym)", **oc}],
         cols=["model", "accuracy", "macro_f1", "balanced_accuracy", "ece"],
     )
     print_table(
@@ -63,7 +71,9 @@ def main() -> None:
     # --- One qualitative trace --------------------------------------------
     print("\n" + traces[0].as_report())
 
-    out = save_json(args.out, {"config": args.config, "omicscouncil": oc, "baseline": bm,
+    out = save_json(args.out, {"config": args.config, "omicscouncil": oc,
+                               "baselines": baseline_metrics,
+                               "baseline": baseline_metrics.get("Concat+LogReg", {}),
                                "representation_dim": pipe.schema.dim})
     print(f"\nSaved -> {out}")
 

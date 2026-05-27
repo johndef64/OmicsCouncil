@@ -218,6 +218,7 @@ Rules:
 - Use ONLY features that appear in the per-feature profile.
 - relation MUST be "elevated_in" or "reduced_in" — nothing else.
 - object MUST be one of the candidate classes.
+- **Each feature must support a SINGLE class — the one whose mean is MOST distant from the others in the same direction as the sample's value**. Do NOT emit the same feature toward two different classes. Pick the most discriminative class only.
 - Emit at most 25 claims; only the strongest evidence.
 - Do not wrap the JSON in markdown fences. Do not add commentary.
 - If you cannot identify any evidence above noise, return [].
