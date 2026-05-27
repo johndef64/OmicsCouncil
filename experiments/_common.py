@@ -105,17 +105,18 @@ class ConcatBaseline:
 class ConcatMLPBaseline(ConcatBaseline):
     """Early-integration baseline with a small MLP head.
 
-    Concatenate-all then a 1-hidden-layer MLP (128 units, dropout 0.3).
-    Same mean-imputation policy as :class:`ConcatBaseline` for missing
-    modalities — purpose: show that even a non-linear concat head does not
-    on its own resolve the symbolic-representation question.
+    Concatenate-all then a 1-hidden-layer MLP (128 units) with moderate
+    L2 weight decay and validation-based early stopping. Same mean-imputation
+    policy as :class:`ConcatBaseline` for missing modalities. Purpose: show
+    that even a non-linear concat head does not on its own resolve the
+    symbolic-representation question.
     """
 
-    def __init__(self, max_iter: int = 200, hidden: int = 128, dropout: float = 0.3,
-                 random_state: int = 42):
+    def __init__(self, max_iter: int = 600, hidden: int = 128,
+                 alpha: float = 1e-2, random_state: int = 42):
         super().__init__(max_iter=max_iter)
         self.hidden = hidden
-        self.dropout = dropout
+        self.alpha = alpha
         self.random_state = random_state
 
     def fit(self, train: MultiModalDataset) -> "ConcatMLPBaseline":
@@ -127,7 +128,7 @@ class ConcatMLPBaseline(ConcatBaseline):
             StandardScaler(),
             MLPClassifier(hidden_layer_sizes=(self.hidden,),
                           max_iter=self.max_iter,
-                          alpha=self.dropout,           # L2 (sklearn has no dropout)
+                          alpha=self.alpha,             # L2 weight decay
                           random_state=self.random_state),
         )
         self.clf.fit(self._concat(train), train.y)

@@ -1,7 +1,18 @@
-# OmicsCouncil — lightweight, CPU-only dependencies.
-# Everything below installs in seconds and pulls no large model weights or datasets:
-# the demonstration dataset ships inside scikit-learn.
+# OmicsCouncil — CPU-only dependencies for both instantiations.
+#
+# Lightweight Wisconsin PoC needs only the four core packages below; medium-weight
+# TCGA-BRCA additionally needs pandas + ijson (for streaming PheKnowLator) and
+# matplotlib (for the composite results figure). The optional LLMAgent needs the
+# openai package (used by `src/llm_lite_async.py` as a unified Groq/OpenRouter client).
 numpy>=1.24
 scikit-learn>=1.3
 networkx>=3.0
 PyYAML>=6.0
+
+# Medium-weight (TCGA-BRCA + PheKnowLator + result figure)
+pandas>=2.0
+ijson>=3.2
+matplotlib>=3.7
+
+# Optional: LLMAgent backend (Groq + OpenRouter, OpenAI-compatible API)
+openai>=1.30

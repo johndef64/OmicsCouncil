@@ -11,7 +11,7 @@ data/docs/*
 
 
 docs/*
-paper/*
+paper*
 archive/*
 
 results/*
