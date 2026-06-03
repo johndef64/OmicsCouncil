@@ -9,10 +9,10 @@ Inputs  (data/pkt/builds/v3.0.2/, produced by scripts/download_pkt.py):
     PKT.nt.tar.gz
     PKT_NodeLabels_with_metadata_v3.0.2.csv
 
-Outputs (by default in data/pkt/builds/v3.0.2/property_graph/):
+Outputs (by default in data/kg/PKT/, the location read by build_pkt_brca_subset.py):
     nodes.json   -- one document per unique RDF entity
-    edges.json   -- one document per triple
-    metadata_lookup.zip  (cache of the URI -> metadata dict)
+    edges.zip    -- zipped edges.json (one document per triple)
+    metadata_lookup.zip  (cache of the URI -> metadata dict, kept in pkt-build-dir)
 
 Usage
 -----
@@ -43,16 +43,20 @@ from urllib.parse import urlparse
 import pandas as pd
 from tqdm import tqdm
 
-from REHMED.src.data.pkt_utils import read_tar_rdf
+# Allow `python src/data/build_property_graph.py` from the project root by
+# making the sibling module importable without a package install.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pkt_utils import read_tar_rdf  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
 DEFAULT_BUILD_DIR = PROJECT_ROOT / "data" / "pkt" / "builds" / "v3.0.2"
-DEFAULT_OUTPUT_DIR = DEFAULT_BUILD_DIR / "property_graph"
+# Write directly to data/kg/PKT/ — the location read by build_pkt_brca_subset.py.
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "kg" / "PKT"
 
 
 # ---------------------------------------------------------------------------
@@ -195,12 +199,26 @@ def convert_rdf_to_property_graph(df: pd.DataFrame, metadata_lookup: dict):
 # ---------------------------------------------------------------------------
 
 def export_to_json_for_arangodb(nodes, edges, output_dir: Path):
+    """Write nodes.json and edges.zip (containing edges.json) under output_dir.
+
+    build_pkt_brca_subset.py reads edges from a zip archive whose internal
+    member is named ``edges.json``; we mirror that layout here.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "nodes.json", "w", encoding="utf-8") as fh:
+    nodes_path = output_dir / "nodes.json"
+    edges_zip = output_dir / "edges.zip"
+
+    with open(nodes_path, "w", encoding="utf-8") as fh:
         json.dump(nodes, fh, indent=2, ensure_ascii=False)
-    with open(output_dir / "edges.json", "w", encoding="utf-8") as fh:
+
+    tmp_edges = output_dir / "edges.json"
+    with open(tmp_edges, "w", encoding="utf-8") as fh:
         json.dump(edges, fh, indent=2, ensure_ascii=False)
-    print(f"\nWrote nodes.json + edges.json to {output_dir}")
+    with zipfile.ZipFile(edges_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(tmp_edges, arcname="edges.json")
+    tmp_edges.unlink()
+
+    print(f"\nWrote nodes.json + edges.zip to {output_dir}")
 
 
 def print_distributions(nodes, edges):
@@ -234,7 +252,8 @@ def parse_args():
     p.add_argument("--node-label-file", type=Path, default=None,
                    help="Override path to PKT_NodeLabels_with_metadata_v3.0.2.csv.")
     p.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
-                   help="Where to write nodes.json + edges.json.")
+                   help="Where to write nodes.json + edges.zip "
+                        "(default: data/kg/PKT/, matching build_pkt_brca_subset.py).")
     p.add_argument("--sample", type=int, default=None, metavar="N",
                    help="Convert only a random sample of N triples (output goes to <output-dir>/sample_<timestamp>/).")
     p.add_argument("--force-metadata", action="store_true",

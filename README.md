@@ -44,8 +44,17 @@ contributors). The medium-weight path is what the paper reports.
 
 ```bash
 # 1. Environment (Python 3.10+)
-bash scripts/setup.sh
-source .venv/bin/activate   # or: .venv\Scripts\activate on Windows
+bash scripts/setup.sh             # POSIX (Linux / macOS / WSL / Git-Bash)
+source .venv/bin/activate
+```
+
+On Windows / PowerShell, `scripts/setup.sh` will not run; create the venv
+manually instead:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
 ### Lightweight PoC (Wisconsin, < 1 min)
@@ -58,10 +67,16 @@ python experiments/run_robustness.py     --config configs/breast_cancer.yaml
 
 ### Medium-weight (TCGA-BRCA, paper-scale)
 
-Three artefacts must exist before the medium-weight run.
+Four artefacts must exist before the medium-weight run.
 
 ```bash
-# (a) PAM50 labels. Download the cBioPortal clinical TSV from
+# (a) The four TCGA-BRCA omic matrices (Xena format) from the UCSC GDC Hub.
+#     Default selection (BRCA, 7 data types incl. star_tpm/methylation27/mirna/
+#     gene-level_ascat3) lands under data/omics/TCGA-BRCA/:
+python src/data/download_omics.py
+#     Sources / catalogue: data/docs/Layer_Structure_Semantic.md.
+
+# (b) PAM50 labels. Download the cBioPortal clinical TSV from
 #     https://www.cbioportal.org/study/clinicalData?id=brca_tcga_pan_can_atlas_2018
 #     and place it at:
 #       data/omics/TCGA-BRCA/brca_tcga_pan_can_atlas_2018_clinical_data.tsv
@@ -69,15 +84,17 @@ Three artefacts must exist before the medium-weight run.
 python src/data/download_pam50.py
 #     -> data/omics/TCGA-BRCA/pam50_labels.tsv (981 labelled samples)
 
-# (b) The four TCGA-BRCA omic matrices (Xena format, *.tsv.gz) must already be
-#     under data/omics/TCGA-BRCA/. Sources documented in
-#     data/docs/Layer_Structure_Semantic.md.
-
-# (c) PheKnowLator subset induced on the selected feature space.
-#     nodes.json (~500 MB) and edges.zip (~225 MB) must be under data/kg/PKT/.
-#     Then build the subset (streaming, ~5 min on a laptop):
+# (c) PheKnowLator property graph. Two stages: download the v3.0.2 Zenodo build,
+#     then convert the RDF dump into nodes.json / edges.zip:
+python src/data/download_pkt.py
+#     -> data/pkt/builds/v3.0.2/{PKT.nt.tar.gz, PKT_NodeLabels_with_metadata_v3.0.2.csv}
+python src/data/build_property_graph.py
+#     -> data/kg/PKT/{nodes.json (~500 MB), edges.zip (~225 MB)}
+#
+# (d) PheKnowLator subset induced on the selected feature space.
+#     Build with --top-k matching `top_features_per_modality` in the config:
 python src/data/build_pkt_brca_subset.py --top-k 3000 --n-hops 1
-#     -> data/kg/PKT/brca_subset.json (362k triples)
+#     -> data/kg/PKT/brca_subset.json (~362k triples)
 
 # Single 70/30 split with all four models + trustworthy metrics:
 python experiments/run_classification.py --config configs/tcga_brca.yaml
@@ -126,7 +143,10 @@ OmicsCouncil/
 │   │   ├── pipeline.py             # end-to-end fit / transform / predict
 │   │   └── metrics.py              # classification + trustworthy-rep metrics
 │   ├── data/                       # data utilities
+│   │   ├── download_omics.py       # fetch TCGA/TARGET matrices from UCSC Xena GDC Hub
 │   │   ├── download_pam50.py       # extract PAM50 calls from cBioPortal TSV
+│   │   ├── download_pkt.py         # fetch PheKnowLator v3.0.2 build from Zenodo
+│   │   ├── build_property_graph.py # PKT RDF dump -> nodes.json + edges.json
 │   │   ├── build_pkt_brca_subset.py# stream PheKnowLator -> brca_subset.json
 │   │   ├── omics_utils.py          # TCGA matrix readers + path config
 │   │   └── pkt_utils.py            # PheKnowLator helpers
@@ -147,8 +167,10 @@ OmicsCouncil/
 │
 ├── data/
 │   ├── omics/TCGA-BRCA/            # Xena .tsv.gz matrices + PAM50 labels
-│   ├── kg/PKT/                     # PheKnowLator nodes/edges + induced subset
-│   ├── mappings/                   # biomart, HM27 probemap, miRNA<->HGNC, ...
+│   ├── pkt/builds/v3.0.2/          # raw PKT Zenodo dump + property_graph/ output
+│   ├── kg/PKT/                     # nodes.json + edges.zip (from build_property_graph)
+│   │                               #   + brca_subset.json (from build_pkt_brca_subset)
+│   ├── mappings/                   # biomart, HM27 probemap, miRNA<->HGNC (shipped zips)
 │   └── docs/                       # KG schema notes
 │
 ├── docs/                           # design notes and rationale

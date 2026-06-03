@@ -15,6 +15,7 @@ paper*
 archive/*
 
 results/*
+results/.llm_cache*
 TODO*
 
 *api_key*
