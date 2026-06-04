@@ -2,9 +2,6 @@
 
 **Deliberation as Representation: Knowledge-Grounded Multi-Agent Embeddings for Multi-Omic Breast-Cancer Subtyping.**
 
-Reference implementation for the REHMED 2026 (ECML-PKDD) workshop submission by
-the DIETI / IKNOS Lab, University of Naples Federico II.
-
 OmicsCouncil represents a patient not by an opaque latent vector but by the
 **trace of a multi-agent deliberation**: modality-specific experts emit typed
 evidence claims, cross-examine each other, and a knowledge-graph arbiter grades
