@@ -13,6 +13,9 @@ PyYAML>=6.0
 pandas>=2.0
 ijson>=3.2
 matplotlib>=3.7
+scipy>=1.10          # paired significance tests (experiments/run_significance.py)
+requests>=2.28       # data downloads (src/data/download_*.py)
+tqdm>=4.65           # download progress bars
 
 # Optional: LLMAgent backend (Groq + OpenRouter, OpenAI-compatible API)
 openai>=1.30

@@ -1,102 +1,77 @@
 """
 download_pkt.py
 ===============
-Download PheKnowLator v3.0.2 build files from Zenodo and derive the
-processed NodeLabels CSV required by build_property_graph.py.
+Fetch the PheKnowLator property graph used as the knowledge prior and place it
+where ``build_pkt_brca_subset.py`` expects it.
 
-Zenodo record: https://zenodo.org/records/10056202
-(Instance-based, Inverse Relations, OWLNETS, v3.0.2 - November 2021)
+Source
+------
+The ``PKT/`` directory of the KG-TransomicNet dataset repository on HuggingFace,
+which distributes a property-graph rendering of the PheKnowLator v3.0.2
+OWL-NETS build (Callahan et al.).
 
-Files downloaded
-----------------
-Required by the pipeline
-  PKT.nt.tar.gz                          -- RDF N-Triples (semantic backbone)
-  PKT_NodeLabels.txt.tar.gz              -- raw node labels (tab-separated)
+    https://huggingface.co/datasets/johndef64/KG-TransomicNet
 
-Optional / supporting (uncomment in PKT_OPTIONAL_FILES to download)
-  PKT_NetworkxMultiDiGraph.gpickle.tar.gz
-  PKT_decoding_dict.pkl.tar.gz
-  node_metadata_dict.pkl.tar.gz
-  Master_Edge_List_Dict.json.tar.gz
-  PKT_Triples_Identifiers.txt.tar.gz
-  PKT_Triples_Integers.txt.tar.gz
-  PKT_Triples_Integer_Identifier_Map.json.tar.gz
-  ontology_source_list.txt.zip
-  edge_source_list.txt.zip
-  downloaded_build_metadata.txt.zip
+We do not rebuild that rendering from the raw OWL-NETS release: that
+construction belongs to the upstream project and is not reproduced here. The
+downloaded nodes already carry the metadata the pipeline needs
+(``bioentity_type``, ``class_code``, ``label``), so no separate metadata file
+is required.
 
-Derived output (generated locally, NOT downloaded)
-  PKT_NodeLabels_with_metadata_v3.0.2.csv
-      Built from PKT_NodeLabels.txt.tar.gz + LabelClassDataset_metadata.csv
-      (the metadata CSV is curated manually and ships with the repository under
-       data/pkt/builds/v3.0.2/LabelClassDataset_metadata.csv)
+What this script does
+---------------------
+    PKT/nodes.zip  (~65 MB)   ->  data/kg/PKT/nodes.json  (unzipped, ~483 MB)
+    PKT/edges.zip  (~225 MB)  ->  data/kg/PKT/edges.zip   (left zipped)
+
+The asymmetry is deliberate, not an oversight: ``build_pkt_brca_subset.py``
+streams ``nodes.json`` in the clear and reads ``edges.json`` from inside
+``edges.zip``. Unzipping edges.zip breaks the next step.
 
 Usage
 -----
-    python scripts/download_pkt.py                  # download + process
-    python scripts/download_pkt.py --skip-download  # process only (files already present)
-    python scripts/download_pkt.py --download-only  # download only, skip processing
-
-Run from the project root or from the scripts/ directory.
+    python src/data/download_pkt.py
+    python src/data/download_pkt.py --force       # re-download and re-extract
+    python src/data/download_pkt.py --keep-zip    # keep nodes.zip after extraction
 """
 
 import argparse
-import os
-import re
 import sys
-import tarfile
+import zipfile
 from pathlib import Path
 
-import pandas as pd
 import requests
 from tqdm import tqdm
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths — note parents[1]: this file lives in src/data/, the project root is
+# two levels up. Must agree with build_pkt_brca_subset.py, which reads
+# data/kg/PKT/.
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
-BUILD_DIR = PROJECT_ROOT / "data" / "pkt" / "builds" / "v3.0.2"
-
-METADATA_CSV = BUILD_DIR / "LabelClassDataset_metadata.csv"   # curated, ships in repo
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
+KG_DIR = PROJECT_ROOT / "data" / "kg" / "PKT"
 
 # ---------------------------------------------------------------------------
-# Zenodo configuration
+# HuggingFace source
 # ---------------------------------------------------------------------------
 
-ZENODO_RECORD = "10056202"
-ZENODO_BASE_URL = f"https://zenodo.org/records/{ZENODO_RECORD}/files"
+HF_REPO = "johndef64/KG-TransomicNet"
+HF_BASE = f"https://huggingface.co/datasets/{HF_REPO}/resolve/main/PKT"
 
-# Original Zenodo filename prefix (files are renamed to PKT_* on download)
-_PKT_PREFIX = "PheKnowLator_v3.0.2_full_instance_inverseRelations_OWLNETS_INSTANCE_purified"
-
-# Files required by the pipeline  {zenodo_filename: local_filename}
-PKT_REQUIRED_FILES = {
-    f"{_PKT_PREFIX}.nt.tar.gz":             "PKT.nt.tar.gz",
-    f"{_PKT_PREFIX}_NodeLabels.txt.tar.gz": "PKT_NodeLabels.txt.tar.gz",
+# {remote name: (local name, extract_to or None)}
+PKT_FILES = {
+    "nodes.zip": ("nodes.zip", "nodes.json"),   # extracted, then optionally removed
+    "edges.zip": ("edges.zip", None),           # left as-is, read as a zip
 }
 
-# Optional supporting files (uncomment as needed)
-PKT_OPTIONAL_FILES = {
-    # f"{_PKT_PREFIX}_NetworkxMultiDiGraph.gpickle.tar.gz": "PKT_NetworkxMultiDiGraph.gpickle.tar.gz",
-    # f"{_PKT_PREFIX}_decoding_dict.pkl.tar.gz":            "PKT_decoding_dict.pkl.tar.gz",
-    # "node_metadata_dict.pkl.tar.gz":                      "node_metadata_dict.pkl.tar.gz",
-    # "Master_Edge_List_Dict.json.tar.gz":                  "Master_Edge_List_Dict.json.tar.gz",
-    # f"{_PKT_PREFIX}_Triples_Identifiers.txt.tar.gz":      "PKT_Triples_Identifiers.txt.tar.gz",
-    # f"{_PKT_PREFIX}_Triples_Integers.txt.tar.gz":         "PKT_Triples_Integers.txt.tar.gz",
-    # f"{_PKT_PREFIX}_Triples_Integer_Identifier_Map.json.tar.gz": "PKT_Triples_Integer_Identifier_Map.json.tar.gz",
-    # "ontology_source_list.txt.zip":                       "ontology_source_list.txt.zip",
-    # "edge_source_list.txt.zip":                           "edge_source_list.txt.zip",
-    # "downloaded_build_metadata.txt.zip":                  "downloaded_build_metadata.txt.zip",
-}
 
-# ---------------------------------------------------------------------------
-# Download helpers
-# ---------------------------------------------------------------------------
-
-def _download_file(url: str, dest: Path, chunk_size: int = 8192) -> None:
-    print(f"  Downloading {dest.name} ...")
+def _download(url: str, dest: Path, force: bool = False) -> None:
+    if dest.exists() and not force:
+        print(f"  Already present, skipping: {dest.name} "
+              f"({dest.stat().st_size / 1e6:.1f} MB)")
+        return
+    print(f"  Downloading {dest.name} from {HF_REPO} ...")
     response = requests.get(url, stream=True, timeout=60)
     response.raise_for_status()
     total = int(response.headers.get("content-length", 0))
@@ -105,161 +80,69 @@ def _download_file(url: str, dest: Path, chunk_size: int = 8192) -> None:
         total=total, unit="B", unit_scale=True, unit_divisor=1024,
         desc=dest.name, ncols=80, leave=False
     ) as bar:
-        for chunk in response.iter_content(chunk_size=chunk_size):
+        for chunk in response.iter_content(chunk_size=1 << 20):
             fh.write(chunk)
             bar.update(len(chunk))
     print(f"  Saved  {dest.name}  ({dest.stat().st_size / 1e6:.1f} MB)")
 
 
-def download_pkt_files(files: dict, force: bool = False) -> None:
-    """Download a dict of {zenodo_name: local_name} into BUILD_DIR."""
-    BUILD_DIR.mkdir(parents=True, exist_ok=True)
-    for zenodo_name, local_name in files.items():
-        dest = BUILD_DIR / local_name
-        if dest.exists() and not force:
-            print(f"  Already present, skipping: {local_name}")
-            continue
-        url = f"{ZENODO_BASE_URL}/{zenodo_name}?download=1"
-        _download_file(url, dest)
+def _extract(zip_path: Path, member: str, force: bool = False) -> Path:
+    out = zip_path.parent / member
+    if out.exists() and not force:
+        print(f"  Already extracted, skipping: {member} "
+              f"({out.stat().st_size / 1e6:.1f} MB)")
+        return out
+    print(f"  Extracting {member} from {zip_path.name} ...")
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        if member not in names:
+            sys.exit(f"[ERROR] {member} not found in {zip_path.name}: {names[:5]}")
+        zf.extract(member, path=zip_path.parent)
+    print(f"  Written {member}  ({out.stat().st_size / 1e6:.1f} MB)")
+    return out
 
-
-# ---------------------------------------------------------------------------
-# NodeLabels processing
-# (mirrors the logic in scripts/kg_utils/pkt_nodelabel-processing.py)
-# ---------------------------------------------------------------------------
-
-def _read_node_labels(tar_path: Path) -> pd.DataFrame:
-    with tarfile.open(tar_path, "r:gz") as tar:
-        members = [m for m in tar.getmembers() if not m.name.startswith(".")]
-        extracted = tar.extractfile(members[0])
-        return pd.read_csv(extracted, sep="\t", dtype=str)
-
-
-def _extract_entity_from_uri(uri: str) -> str:
-    if pd.isna(uri):
-        return ""
-    part = uri.rstrip(">").split("/")[-1]
-    return part.split("=")[-1]
-
-
-def _extract_class_code(entity: str) -> str:
-    s = re.sub(r"(?<!\d)\d+$", "", entity).rstrip("_-")
-    for prefix in ("PR_", "CHR_", "GNO_"):
-        if s.startswith(prefix):
-            return prefix.rstrip("_")
-    return s.split("#")[0]
-
-
-def _process_node_labels(df: pd.DataFrame) -> pd.DataFrame:
-    if "integer_id" in df.columns:
-        df["integer_id"] = df["integer_id"].astype(str)
-    df["entity"] = df["entity_uri"].apply(_extract_entity_from_uri) if "entity_uri" in df.columns else ""
-    df["class_code"] = df["entity"].apply(_extract_class_code)
-    df["class_code"] = (
-        df["class_code"]
-        .replace("UMLS_C", "UMLS")
-        .replace("22-rdf-syntax-ns", "RDF")
-        .replace("", "EntrezID")
-        .replace("rs", "dbSNP")
-    )
-    if "entity_class" in df.columns:
-        df = df.drop(columns=["entity_class"])
-    return df
-
-
-def build_node_labels_csv(force: bool = False) -> Path:
-    """
-    Read PKT_NodeLabels.txt.tar.gz, derive class_code and entity columns,
-    merge with the curated LabelClassDataset_metadata.csv, and write
-    PKT_NodeLabels_with_metadata_v3.0.2.csv to BUILD_DIR.
-
-    Returns the path to the output CSV.
-    """
-    out_path = BUILD_DIR / "PKT_NodeLabels_with_metadata_v3.0.2.csv"
-    if out_path.exists() and not force:
-        print(f"  Already present, skipping: {out_path.name}")
-        return out_path
-
-    tar_path = BUILD_DIR / "PKT_NodeLabels.txt.tar.gz"
-    if not tar_path.exists():
-        sys.exit(f"[ERROR] Missing {tar_path}. Run without --skip-download first.")
-
-    if not METADATA_CSV.exists():
-        sys.exit(
-            f"[ERROR] Curated metadata file not found: {METADATA_CSV}\n"
-            "This file ships with the repository under data/pkt/builds/v3.0.2/."
-        )
-
-    print(f"  Reading {tar_path.name} ...")
-    df = _read_node_labels(tar_path)
-    print(f"  Read {len(df):,} rows. Processing ...")
-    df = _process_node_labels(df)
-
-    meta = pd.read_csv(METADATA_CSV)
-    # drop duplicate (class_code, bioentity_type) rows that appear in the curated file
-    meta = meta.drop_duplicates(subset=["class_code"])
-    df = df.merge(meta, on="class_code", how="left")
-
-    df.to_csv(out_path, index=False)
-    print(f"  Written {out_path.name}  ({out_path.stat().st_size / 1e6:.1f} MB)")
-    return out_path
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Download PheKnowLator v3.0.2 build files and derive NodeLabels CSV."
+        description="Download the PheKnowLator property graph (KG-TransomicNet "
+                    "PKT/) into data/kg/PKT/."
     )
-    p.add_argument(
-        "--skip-download", action="store_true",
-        help="Skip downloading from Zenodo (files must already be present)."
-    )
-    p.add_argument(
-        "--download-only", action="store_true",
-        help="Download files but skip NodeLabels processing."
-    )
-    p.add_argument(
-        "--include-optional", action="store_true",
-        help="Also download optional supporting files (NetworkX graph, dicts, etc.)."
-    )
-    p.add_argument(
-        "--force", action="store_true",
-        help="Re-download and reprocess even if output files already exist."
-    )
+    p.add_argument("--force", action="store_true",
+                   help="Re-download and re-extract even if files are present.")
+    p.add_argument("--keep-zip", action="store_true",
+                   help="Keep nodes.zip after extracting nodes.json.")
     return p.parse_args()
 
 
-def main():
+def main() -> None:
     args = parse_args()
 
-    print("=" * 60)
-    print("download_pkt — PheKnowLator v3.0.2")
-    print(f"Zenodo record : {ZENODO_RECORD}")
-    print(f"Build dir     : {BUILD_DIR}")
-    print("=" * 60)
+    print("=" * 68)
+    print("download_pkt — PheKnowLator property graph")
+    print(f"Source    : {HF_REPO} (PKT/)")
+    print(f"Target dir: {KG_DIR}")
+    print("=" * 68)
 
-    # --- Download ---
-    if not args.skip_download:
-        files_to_download = dict(PKT_REQUIRED_FILES)
-        if args.include_optional:
-            files_to_download.update(PKT_OPTIONAL_FILES)
-        print(f"\n[1/2] Downloading {len(files_to_download)} file(s) from Zenodo ...")
-        download_pkt_files(files_to_download, force=args.force)
-    else:
-        print("\n[1/2] Download skipped (--skip-download).")
+    KG_DIR.mkdir(parents=True, exist_ok=True)
 
-    # --- Process NodeLabels ---
-    if not args.download_only:
-        print("\n[2/2] Building PKT_NodeLabels_with_metadata_v3.0.2.csv ...")
-        out = build_node_labels_csv(force=args.force)
-        print(f"\nDone. NodeLabels CSV: {out}")
-    else:
-        print("\n[2/2] Processing skipped (--download-only).")
+    print(f"\n[1/2] Downloading {len(PKT_FILES)} file(s) ...")
+    for remote, (local, _) in PKT_FILES.items():
+        _download(f"{HF_BASE}/{remote}", KG_DIR / local, force=args.force)
 
-    print("\n[OK] download_pkt finished.")
+    print("\n[2/2] Extracting ...")
+    for _, (local, member) in PKT_FILES.items():
+        if member is None:
+            print(f"  {local} is read as a zip by build_pkt_brca_subset.py; "
+                  f"leaving it compressed.")
+            continue
+        zip_path = KG_DIR / local
+        _extract(zip_path, member, force=args.force)
+        if not args.keep_zip:
+            zip_path.unlink()
+            print(f"  Removed {local} (use --keep-zip to retain it)")
+
+    print("\n[OK] download_pkt finished. Next:")
+    print("     python src/data/build_pkt_brca_subset.py --top-k 3000 --n-hops 1")
 
 
 if __name__ == "__main__":

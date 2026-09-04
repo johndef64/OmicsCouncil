@@ -2,8 +2,7 @@
 
 **Deliberation as Representation: Knowledge-Grounded Multi-Agent Embeddings for Multi-Omic Breast-Cancer Subtyping.**
 
-Reference implementation for the REHMED 2026 (ECML-PKDD) workshop paper by
-the DIETI / IKNOS Lab, University of Naples Federico II.
+> Reference implementation for the REHMED 2026 (ECML-PKDD) workshop paper by the DIETI / IKNOS Lab, University of Naples Federico II.
 
 OmicsCouncil represents a patient not by an opaque latent vector but by the
 **trace of a multi-agent deliberation**: modality-specific experts emit typed
@@ -30,7 +29,7 @@ framework at very different scales:
 | Dataset | Breast Cancer Wisconsin (ships with sklearn) | TCGA-BRCA, 4 omic layers |
 | Samples | 569 | 272 (after 4-way intersection + PAM50) |
 | Modalities | 3 statistical views of FNA cytology | RNA / methylation / miRNA / CNV |
-| Knowledge prior | data-derived feature→class graph | PheKnowLator subset (1-hop, 362k triples) |
+| Knowledge prior | data-derived feature→class graph | PheKnowLator property graph, 1-hop subset (362k triples) |
 | Arbiter mode | `weighted_lookup` (exact-edge) | `pkt_anchored` (Option C: subject grounding) |
 | Runtime | seconds, CPU | minutes, CPU |
 | External downloads | none | PheKnowLator nodes/edges + PAM50 labels |
@@ -84,12 +83,13 @@ python src/data/download_omics.py
 python src/data/download_pam50.py
 #     -> data/omics/TCGA-BRCA/pam50_labels.tsv (981 labelled samples)
 
-# (c) PheKnowLator property graph. Two stages: download the v3.0.2 Zenodo build,
-#     then convert the RDF dump into nodes.json / edges.zip:
+# (c) PheKnowLator property graph, used as the knowledge prior. Downloaded from
+#     the PKT/ directory of the KG-TransomicNet dataset repository, which
+#     distributes a property-graph rendering of the PheKnowLator v3.0.2
+#     OWL-NETS build:  https://huggingface.co/datasets/johndef64/KG-TransomicNet
 python src/data/download_pkt.py
-#     -> data/pkt/builds/v3.0.2/{PKT.nt.tar.gz, PKT_NodeLabels_with_metadata_v3.0.2.csv}
-python src/data/build_property_graph.py
-#     -> data/kg/PKT/{nodes.json (~500 MB), edges.zip (~225 MB)}
+#     -> data/kg/PKT/nodes.json (~483 MB, unzipped) + edges.zip (~225 MB, kept
+#        zipped: build_pkt_brca_subset.py reads edges.json from inside it)
 #
 # (d) PheKnowLator subset induced on the selected feature space.
 #     Build with --top-k matching `top_features_per_modality` in the config:
@@ -155,11 +155,9 @@ OmicsCouncil/
 │   ├── data/                       # data utilities
 │   │   ├── download_omics.py       # fetch TCGA/TARGET matrices from UCSC Xena GDC Hub
 │   │   ├── download_pam50.py       # extract PAM50 calls from cBioPortal TSV
-│   │   ├── download_pkt.py         # fetch PheKnowLator v3.0.2 build from Zenodo
-│   │   ├── build_property_graph.py # PKT RDF dump -> nodes.json + edges.json
+│   │   ├── download_pkt.py         # fetch the PKT property graph (KG-TransomicNet, HF)
 │   │   ├── build_pkt_brca_subset.py# stream PheKnowLator -> brca_subset.json
-│   │   ├── omics_utils.py          # TCGA matrix readers + path config
-│   │   └── pkt_utils.py            # PheKnowLator helpers
+│   │   └── omics_utils.py          # TCGA matrix readers + path config
 │   ├── llm_lite_async.py           # Groq + OpenRouter client (sync + async)
 │   └── plots.py                    # composite results figure for the paper
 │
@@ -179,8 +177,7 @@ OmicsCouncil/
 │
 ├── data/
 │   ├── omics/TCGA-BRCA/            # Xena .tsv.gz matrices + PAM50 labels
-│   ├── pkt/builds/v3.0.2/          # raw PKT Zenodo dump + property_graph/ output
-│   ├── kg/PKT/                     # nodes.json + edges.zip (from build_property_graph)
+│   ├── kg/PKT/                     # nodes.json + edges.zip (from download_pkt)
 │   │                               #   + brca_subset.json (from build_pkt_brca_subset)
 │   ├── mappings/                   # biomart, HM27 probemap, miRNA<->HGNC (shipped zips)
 │   └── docs/                       # KG schema notes
@@ -244,6 +241,17 @@ marker recovery ≥1 = 1.00, ≥3 = 0.96 (mean 3.7 canonical PAM50 markers per
 verified trace), faithfulness 0.045 ± 0.022. See
 `docs/redirection_report_optC.md` for the rationale and `paper/main.tex` for
 the discussion.
+
+---
+
+## External resources used
+
+| resource | used for | reference |
+|---|---|---|
+| TCGA-BRCA (UCSC Xena GDC Hub) | the four omic matrices | Goldman et al. 2020 |
+| cBioPortal Pan-Cancer Atlas | PAM50 labels | Cerami et al. 2012; Liu et al. 2018 |
+| PheKnowLator v3.0.2 (OWL-NETS) | upstream source of the knowledge prior | Callahan et al. 2024 |
+| [KG-TransomicNet](https://huggingface.co/datasets/johndef64/KG-TransomicNet), `PKT/` | the property-graph rendering of PheKnowLator that we consume | [10.5281/zenodo.21629418](https://doi.org/10.5281/zenodo.21629418) |
 
 ---
 
