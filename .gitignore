@@ -14,8 +14,19 @@ docs/*
 paper*
 archive/*
 
+# results/ is ignored by default: it accumulates exploratory runs, superseded
+# protocols and LLM response caches. The four artefacts below are the exception
+# -- they are the ones the paper reports (Table 2, the significance tests and
+# Fig. 1), and shipping them lets `python src/plots.py` and
+# `python experiments/run_significance.py` run on a clean clone without first
+# repeating ~2.5 h of CPU.
 results/*
 results/.llm_cache*
+!results/tcga_brca_cv20x5.json
+!results/tcga_brca_cv20x5_k60.json
+!results/tcga_brca_cv20x5_k80.json
+!results/significance_20x5.json
+
 TODO*
 
 *api_key*

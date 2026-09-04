@@ -56,8 +56,7 @@ def main() -> None:
 
     fold_records: List[Dict] = []                           # per-fold metrics
     all_oc_traces = []                                      # for global trustworthy
-    pipe_for_faith = None
-    proba_for_faith = None
+    faith_per_fold: List[float] = []                        # one value per fold
 
     for fold_idx, (tr_idx, te_idx) in enumerate(skf.split(np.zeros(ds.n_samples), ds.y), start=1):
         print(f"\n--- Fold {fold_idx}/{args.folds}  (train={len(tr_idx)}, test={len(te_idx)}) ---")
@@ -86,8 +85,9 @@ def main() -> None:
         fold_records.extend(rows)
 
         all_oc_traces.extend(traces)
-        # Save the last fold's pipe+proba to compute faithfulness once.
-        pipe_for_faith, proba_for_faith = pipe, proba
+        # Faithfulness is computed on every fold, not just the last one:
+        # it needs the fold's own fitted head to re-encode its traces.
+        faith_per_fold.append(float(faithfulness(pipe, proba, traces, top_k=3)))
 
     # ---- Aggregate per-model: mean +/- std across folds -----------------
     def _agg(model_name: str) -> Dict[str, float]:
@@ -113,11 +113,10 @@ def main() -> None:
     trust = {}
     trust.update({f"halluc_{k}": v for k, v in hallucination_containment(all_oc_traces).items()})
     trust.update({f"marker_{k}": v for k, v in marker_recovery(all_oc_traces, cfg.reference_markers).items()})
-    # Faithfulness needs the last-fold pipe + proba — a representative sample.
-    if pipe_for_faith is not None:
-        trust["faithfulness_lastfold"] = faithfulness(
-            pipe_for_faith, proba_for_faith, all_oc_traces[-len(proba_for_faith):], top_k=3
-        )
+    if faith_per_fold:
+        trust["faithfulness_mean"] = float(np.mean(faith_per_fold))
+        trust["faithfulness_std"] = float(np.std(faith_per_fold, ddof=1)) \
+            if len(faith_per_fold) > 1 else 0.0
 
     print("\nTrustworthy metrics (pooled across all folds):")
     for k, v in trust.items():

@@ -47,12 +47,18 @@ relations:
 # --- Agent configuration ---------------------------------------------------
 agent:
   type: statistical                 # 'statistical' (default) or 'llm' (TBD)
-  top_features_per_agent: 40        # PoC used 5; medium-weight chosen via
-                                    # 5-fold CV ablation over K in {40,60,80}.
-                                    # K=40 wins on faithfulness (0.083) and
-                                    # variance, ties on ECE; -1.3pt F1 vs K=60
-                                    # is the deliberate trade-off. See
-                                    # redirection_report_optC for full table.
+  top_features_per_agent: 40        # PoC used 5; medium-weight chosen via the
+                                    # 20x5 repeated-CV ablation over K in
+                                    # {40,60,80} (configs/tcga_brca_k{60,80}).
+                                    # K=40 maximises faithfulness (0.045 vs
+                                    # 0.033 at K=60 and 0.023 at K=80) and
+                                    # containment (0.398 vs 0.377, 0.366).
+                                    # Accuracy rises with K (0.820/0.829/0.835)
+                                    # but the gain is not significant under the
+                                    # Nadeau-Bengio corrected test (p=0.46 for
+                                    # K=80 vs K=40); ECE is flat. The chosen
+                                    # trade-off is interpretability over a
+                                    # ~1.5pt accuracy point estimate.
   confidence_threshold: 0.55
   confidence_beta: 1.5
 

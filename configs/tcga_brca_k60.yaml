@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# K-ablation variant of configs/tcga_brca.yaml with
+# agent.top_features_per_agent = 60.
+#
+# Identical to the default medium-weight config in every other respect, so the
+# ablation isolates K. Previously this run was produced by editing the default
+# config by hand; keeping it as a file makes Fig. 1C reproducible from the repo.
+# ---------------------------------------------------------------------------
+
+domain: tcga_brca
+seed: 42
+test_size: 0.30
+
+dataset:
+  loader: tcga_brca
+  top_features_per_modality: 3000
+  feature_selection: mad
+  drop_classes: [Normal]
+
+modalities:
+  rna: {}
+  met: {}
+  mir: {}
+  cnv: {}
+
+relations:
+  - elevated_in
+  - reduced_in
+
+agent:
+  type: statistical
+  top_features_per_agent: 60        # <-- the only difference from the default
+  confidence_threshold: 0.55
+  confidence_beta: 1.5
+
+council:
+  enable_cross_examination: true
+  enable_arbiter: true
+  typed_claims: true
+  drop_grades: [E3, E4]
+  support_threshold: 1
+
+knowledge:
+  source: pkt_subset
+  path: data/kg/PKT/brca_subset.json
+
+classifier:
+  type: logistic_regression
+  max_iter: 2000
+
+reference_markers:
+  - ESR1
+  - ERBB2
+  - MKI67
+  - BCL2
+  - FOXA1
+  - MLPH
+  - KRT5
+  - KRT17
+  - GATA3
+  - PGR
+  - EGFR

@@ -2,6 +2,9 @@
 
 **Deliberation as Representation: Knowledge-Grounded Multi-Agent Embeddings for Multi-Omic Breast-Cancer Subtyping.**
 
+Reference implementation for the REHMED 2026 (ECML-PKDD) workshop paper by
+the DIETI / IKNOS Lab, University of Naples Federico II.
+
 OmicsCouncil represents a patient not by an opaque latent vector but by the
 **trace of a multi-agent deliberation**: modality-specific experts emit typed
 evidence claims, cross-examine each other, and a knowledge-graph arbiter grades
@@ -96,8 +99,16 @@ python src/data/build_pkt_brca_subset.py --top-k 3000 --n-hops 1
 # Single 70/30 split with all four models + trustworthy metrics:
 python experiments/run_classification.py --config configs/tcga_brca.yaml
 
-# 5-fold stratified CV (the numbers reported in the paper):
+# Single 5-fold stratified CV pass:
 python experiments/run_classification_cv.py --config configs/tcga_brca.yaml --folds 5
+
+# 20 x 5 repeated CV -- the protocol reported in the paper (100 fits, ~45 min):
+python experiments/run_classification_cv_repeated.py \
+    --config configs/tcga_brca.yaml --repeats 20 --out tcga_brca_cv20x5.json
+#   K ablation: same command with configs/tcga_brca_k60.yaml and _k80.yaml
+
+# Paired significance tests on those results (no refitting):
+python experiments/run_significance.py
 
 # Composite results figure (4 panels) for the paper:
 python src/plots.py
@@ -125,7 +136,9 @@ OmicsCouncil/
 ├── configs/
 │   ├── breast_cancer.yaml          # lightweight PoC config (Wisconsin)
 │   ├── tcga_brca.yaml              # medium-weight default (statistical agents)
-│   └── tcga_brca_llm.yaml          # LLM-agent variant of the above
+│   ├── tcga_brca_k60.yaml          # K ablation: top_features_per_agent = 60
+│   ├── tcga_brca_k80.yaml          #             ... = 80
+│   └── tcga_brca_llm.yaml          # LLM-agent variant of the default
 │
 ├── src/
 │   ├── omicscouncil/               # framework package (domain-agnostic)
@@ -153,7 +166,9 @@ OmicsCouncil/
 ├── experiments/                    # runnable studies
 │   ├── _common.py                  # shared loaders + 3 baselines (LogReg, MLP, late-fusion)
 │   ├── run_classification.py       # single split, OC + baselines + trust metrics
-│   ├── run_classification_cv.py    # 5-fold stratified CV (paper protocol)
+│   ├── run_classification_cv.py    # single stratified K-fold CV pass
+│   ├── run_classification_cv_repeated.py  # 20x5 repeated CV (paper protocol)
+│   ├── run_significance.py         # paired tests (Nadeau-Bengio) on the above
 │   ├── run_ablation.py             # no-cross-exam / no-arbiter / untyped
 │   └── run_robustness.py           # missing-modality sweep
 │
@@ -206,24 +221,34 @@ encoder is required.
 
 ---
 
-## Results summary (5-fold CV, TCGA-BRCA PAM50, N=272)
+## Results summary (20×5 repeated CV, TCGA-BRCA PAM50, N=272)
 
 | Model | Accuracy | Macro-F1 | Bal.acc | ECE ↓ |
 |---|---:|---:|---:|---:|
-| Concat+LogReg | **0.835 ± 0.051** | **0.821 ± 0.046** | **0.825 ± 0.051** | 0.114 ± 0.053 |
-| Concat+MLP | 0.809 ± 0.048 | 0.782 ± 0.040 | 0.781 ± 0.054 | 0.180 ± 0.043 |
-| Late-fusion | 0.824 ± 0.071 | 0.798 ± 0.076 | 0.778 ± 0.079 | 0.128 ± 0.024 |
-| **OmicsCouncil** | 0.791 ± 0.055 | 0.760 ± 0.042 | 0.749 ± 0.041 | **0.091 ± 0.024** |
+| Concat+LogReg | **0.832 ± 0.041** | **0.817 ± 0.047** | **0.819 ± 0.050** | 0.122 ± 0.034 |
+| Concat+MLP | 0.795 ± 0.048 | 0.765 ± 0.060 | 0.770 ± 0.060 | 0.193 ± 0.045 |
+| Late-fusion | **0.832 ± 0.041** | 0.807 ± 0.050 | 0.787 ± 0.052 | 0.113 ± 0.029 |
+| **OmicsCouncil** | 0.820 ± 0.042 | 0.803 ± 0.051 | 0.795 ± 0.053 | **0.089 ± 0.028** |
 
-OmicsCouncil trades ~4 accuracy points for the best calibration of the four
-models (20–50% lower ECE), the lowest fold-to-fold variance, and an
-interpretable representation: containment rate 0.40, marker recovery ≥1 =
-1.00, marker recovery ≥3 = 0.97 (mean 3.7 canonical PAM50 markers per
-verified trace), faithfulness 0.083. See `docs/redirection_report_optC.md`
-for the full rationale and `paper/main.tex` for the discussion.
+Mean ± std over 100 folds (20 repetitions of stratified 5-fold CV, seeds
+42–61). OmicsCouncil gives up an accuracy point estimate of 1.2 points — a
+gap that does not reach significance (34/100 folds, p=0.65 under the
+Nadeau-Bengio corrected paired test) — for the best calibration of the four
+models. Its ECE is lower than each baseline on 72–99 of the 100 folds; the
+advantage clears the corrected test against Concat+MLP (p=0.0001), is
+borderline against Concat+LogReg (p=0.067) and is not established against
+Late-fusion (p=0.24).
+
+The representation is interpretable by construction: containment rate 0.398,
+marker recovery ≥1 = 1.00, ≥3 = 0.96 (mean 3.7 canonical PAM50 markers per
+verified trace), faithfulness 0.045 ± 0.022. See
+`docs/redirection_report_optC.md` for the rationale and `paper/main.tex` for
+the discussion.
 
 ---
 
 ## Citation
 
-Pending acceptance at REHMED 2026 (ECML-PKDD).
+Benfenati, D., De Filippis, G.M., Rinaldi, A.M.: *Deliberation as
+Representation: Knowledge-Grounded Multi-Agent Embeddings for Multi-Omic
+Breast-Cancer Subtyping.* REHMED @ ECML-PKDD 2026, Naples.

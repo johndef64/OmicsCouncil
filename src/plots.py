@@ -44,6 +44,15 @@ PALETTE = {
 }
 MODELS_ORDER = ["Concat+LogReg", "Concat+MLP", "Late-fusion", "OmicsCouncil"]
 
+# Nadeau-Bengio corrected paired test of each baseline's ECE against
+# OmicsCouncil's, over the 100 folds of the 20x5 protocol.
+# Produced by experiments/run_significance.py.
+ECE_PVALUES = {
+    "Concat+LogReg": "n.s.",
+    "Concat+MLP":    "p=0.0001",
+    "Late-fusion":   "n.s.",
+}
+
 
 # --------------------------------------------------------------------------- #
 # Data readers
@@ -59,14 +68,14 @@ def load_cv_summary(path: Path) -> Dict[str, Dict[str, float]]:
 
 def load_k_ablation() -> List[Tuple[int, dict]]:
     """Read K=40 / 60 / 80 CV files. Returns [(K, summary_for_OC), ...]."""
-    files = [(40, "tcga_brca_cv5.json"),
-             (60, "tcga_brca_cv5_k60.json"),
-             (80, "tcga_brca_cv5_k80.json")]
+    files = [(40, "tcga_brca_cv20x5.json"),
+             (60, "tcga_brca_cv20x5_k60.json"),
+             (80, "tcga_brca_cv20x5_k80.json")]
     out = []
     for k, fname in files:
         blob = json.loads((RESULTS_DIR / fname).read_text())
         oc = next(r for r in blob["summary"] if r["model"] == "OmicsCouncil")
-        oc["faithfulness"] = blob["trustworthy"].get("faithfulness_lastfold", float("nan"))
+        oc["faithfulness"] = blob["trustworthy"].get("faithfulness_mean", float("nan"))
         oc["containment"] = blob["trustworthy"].get("halluc_containment_rate", float("nan"))
         out.append((k, oc))
     return out
@@ -131,7 +140,7 @@ def panel_accuracy(ax, summary):
     ax.set_xticks(x)
     ax.set_xticklabels(MODELS_ORDER, rotation=20, ha="right")
     ax.set_ylim(0.6, 0.99)
-    ax.set_ylabel("Score (5-fold CV)")
+    ax.set_ylabel("Score (20x5 repeated CV)")
     ax.set_title("(A) Classification: accuracy / macro-F1")
     ax.grid(axis="y", linestyle=":", linewidth=0.5, alpha=0.6)
     ax.legend(loc="upper right", frameon=True, framealpha=0.9,
@@ -163,6 +172,14 @@ def panel_ece(ax, summary):
                 ha="center", fontsize=8, color="black",
                 arrowprops=dict(arrowstyle="-", lw=0.6, color="black"))
 
+    # Paired per-fold test of each baseline against OmicsCouncil, so the
+    # reader sees the significance of the *differences* and not only the
+    # overlap of the per-model bars. See run_significance.py.
+    for m, label in ECE_PVALUES.items():
+        i = MODELS_ORDER.index(m)
+        ax.text(i, means[i] + stds[i] + 0.012, label,
+                ha="center", fontsize=7, color="0.25")
+
 
 def panel_k_ablation(ax, k_data):
     """K vs accuracy and K vs faithfulness on twin y-axes."""
@@ -179,7 +196,10 @@ def panel_k_ablation(ax, k_data):
     ax.set_xlabel("top_features_per_agent (K)")
     ax.set_ylabel("Accuracy / Macro-F1", color="#c0504d")
     ax.set_xticks(Ks)
-    ax.set_ylim(0.72, 0.86)
+    # Wide enough to show every error bar in full, caps included: a tighter
+    # range clips them and makes the intervals look different in width than
+    # they are.
+    ax.set_ylim(0.75, 0.90)
     ax.tick_params(axis="y", colors="#c0504d")
     ax.set_title("(C) Ablation: K vs accuracy vs faithfulness")
     ax.grid(axis="y", linestyle=":", linewidth=0.5, alpha=0.6)
@@ -188,13 +208,13 @@ def panel_k_ablation(ax, k_data):
     line_faith = ax2.plot(Ks, faiths, marker="^", color="#5a8a3a",
                           linewidth=1.5, label="Faithfulness")
     ax2.set_ylabel("Faithfulness  ↑", color="#5a8a3a")
-    ax2.set_ylim(-0.01, 0.12)
+    ax2.set_ylim(0.0, 0.06)
     ax2.tick_params(axis="y", colors="#5a8a3a")
     ax2.spines["top"].set_visible(False)
 
     # Star K=40 as chosen.
     ax.axvline(40, color="grey", linestyle=":", linewidth=0.8, alpha=0.8)
-    ax.text(40, 0.85, "chosen", ha="center", fontsize=8, color="grey")
+    ax.text(40, 0.888, "chosen", ha="center", fontsize=8, color="grey")
 
     # Combined legend.
     handles = [line_a, line_f1[0], line_faith[0]]
@@ -231,7 +251,7 @@ def panel_marker_recovery(ax, marker_counts):
 def main():
     _set_paper_style()
 
-    cv = load_cv_summary(RESULTS_DIR / "tcga_brca_cv5.json")
+    cv = load_cv_summary(RESULTS_DIR / "tcga_brca_cv20x5.json")
     k_data = load_k_ablation()
     print("Computing marker recovery histogram (this re-runs the K=40 pipeline once)...")
     marker_counts = compute_marker_distribution()
